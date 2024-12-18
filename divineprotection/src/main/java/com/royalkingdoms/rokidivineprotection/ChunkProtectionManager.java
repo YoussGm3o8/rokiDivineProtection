@@ -2,17 +2,22 @@ package com.royalkingdoms.rokidivineprotection;
 
 import cn.nukkit.Player;
 import cn.nukkit.block.Block;
+import cn.nukkit.block.BlockBarrel;
 import cn.nukkit.block.BlockChest;
-import cn.nukkit.block.BlockFire;
+import cn.nukkit.block.BlockHopper;
+import cn.nukkit.block.BlockID;
+import cn.nukkit.block.BlockShulkerBox;
 import cn.nukkit.event.EventHandler;
 import cn.nukkit.event.Listener;
 import cn.nukkit.event.block.BlockBreakEvent;
 import cn.nukkit.event.block.BlockPlaceEvent;
 import cn.nukkit.event.block.BlockBurnEvent;
 import cn.nukkit.event.block.BlockGrowEvent;
+import cn.nukkit.event.block.BlockIgniteEvent;
 import cn.nukkit.event.entity.EntityExplodeEvent;
 import cn.nukkit.event.player.PlayerMoveEvent;
 import cn.nukkit.event.player.PlayerTeleportEvent;
+import cn.nukkit.level.Level;
 import cn.nukkit.level.Position;
 import me.onebone.economyapi.EconomyAPI;
 
@@ -96,6 +101,8 @@ public class ChunkProtectionManager implements Listener {
             return false;
         }
 
+        int storageBlockCount = countStorageBlocksInChunk(playerPos);
+
         // Check economy
         EconomyAPI economy = EconomyAPI.getInstance();
         double playerMoney = economy.myMoney(player);
@@ -105,11 +112,18 @@ public class ChunkProtectionManager implements Listener {
             return false;
         }
 
+        ProtectedChunkData chunkData = new ProtectedChunkData(player.getUniqueId(), playerPos);
+        chunkData.setStorageCount(storageBlockCount);
+
+        if (storageBlockCount > MAX_CHESTS) {
+            player.sendMessage("§cThis chunk contains " + storageBlockCount + " storage blocks. " +
+                               "It will be unprotected until reduced to 2 or fewer!");
+        }    
+
         // Reduce money
         economy.reduceMoney(player, CLAIM_COST);
 
         // Create chunk protection
-        ProtectedChunkData chunkData = new ProtectedChunkData(player.getUniqueId(), playerPos);
         protectedChunks.put(chunkKey, chunkData);
 
         // Save chunks after modification
@@ -119,7 +133,54 @@ public class ChunkProtectionManager implements Listener {
         return true;
     }
 
-    private String getChunkKey(Position pos) {
+    public void unprotectChunk(String chunkKey) {
+        if (protectedChunks.containsKey(chunkKey)) {
+            // Remove the chunk from the protection map
+            protectedChunks.remove(chunkKey);
+            plugin.getLogger().info("Chunk protection removed for key: " + chunkKey);
+        }
+    }
+
+    public List<ProtectedChunkData> getProtectedChunksByOwner(UUID ownerId) {
+        List<ProtectedChunkData> ownedChunks = new ArrayList<>();
+        for (ProtectedChunkData chunk : protectedChunks.values()) {
+            if (chunk.getOwner().equals(ownerId)) {
+                ownedChunks.add(chunk);
+            }
+        }
+        return ownedChunks;
+    }
+
+    private int countStorageBlocksInChunk(Position pos) {
+        Level level = pos.level;
+        int chunkX = pos.getChunkX();
+        int chunkZ = pos.getChunkZ();
+        
+        int storageBlockCount = 0;
+    
+        // Iterate through all blocks in the chunk
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                for (int y = 0; y < 320; y++) {
+                    // Get the block at this position within the chunk
+                    Block block = level.getBlock(
+                        (chunkX * 16) + x, 
+                        y, 
+                        (chunkZ * 16) + z
+                    );
+    
+                    // Check if it's a storage block
+                    if (isStorageBlock(block)) {
+                        storageBlockCount++;
+                    }
+                }
+            }
+        }
+    
+        return storageBlockCount;
+    }
+
+    public String getChunkKey(Position pos) {
         if (pos == null || pos.level == null) {
             return null;
         }
@@ -151,6 +212,11 @@ public class ChunkProtectionManager implements Listener {
                     player.sendTitle("§cDivine Protection", "§4Forbidden Territory!", 10, 70, 20);
                 }
             }
+            if (protectedChunk != null && protectedChunk.getOwner().equals(player.getUniqueId())) {
+                // Update the last access time when the player enters their own chunk
+                protectedChunk.updateLastAccessTime();
+                saveProtectedChunks();  // Save the updated chunk data
+            }
         }
     }
 
@@ -171,7 +237,19 @@ public class ChunkProtectionManager implements Listener {
                 event.setCancelled(true);
                 player.sendTitle("§cDivine Protection", "§4Teleport Blocked!", 10, 70, 20);
             }
+            if (protectedChunk != null && protectedChunk.getOwner().equals(player.getUniqueId())) {
+                // Update the last access time when the player teleports to their own chunk
+                protectedChunk.updateLastAccessTime();
+                saveProtectedChunks();  // Save the updated chunk data
+            }
         }
+    }
+
+    private boolean isStorageBlock(Block block) {
+        return block instanceof BlockChest || 
+               block instanceof BlockBarrel || 
+               block instanceof BlockHopper || 
+               block instanceof BlockShulkerBox;
     }
 
     @EventHandler
@@ -186,16 +264,18 @@ public class ChunkProtectionManager implements Listener {
 
         ProtectedChunkData protectedChunk = protectedChunks.get(chunkKey);
         if (protectedChunk != null) {
-            if (!protectedChunk.getOwner().equals(player.getUniqueId())) {
+
+            int currentStorageCount = protectedChunk.getStorageCount();
+
+            if (!protectedChunk.getOwner().equals(player.getUniqueId()) && currentStorageCount <= 2 ) {
                 event.setCancelled(true);
                 player.sendTitle("§cDivine Protection", "§4Cannot Build Here!", 10, 70, 20);
-            } else if (event.getBlock() instanceof BlockChest) {
-                        
-                int previousChestCount = protectedChunk.getChestCount();
-                protectedChunk.incrementChestCount();
-                int currentChestCount = protectedChunk.getChestCount();
+            } else if (isStorageBlock(event.getBlock())) {
+                int previousStorageCount = protectedChunk.getStorageCount();
+                protectedChunk.incrementStorageCount();
+                currentStorageCount = protectedChunk.getStorageCount();
 
-                if (previousChestCount <= 2 && currentChestCount > 2) {
+                if (previousStorageCount <= 2 && currentStorageCount > 2) {
                     player.sendTitle("§cDivine Protection", "§4Chunk is no longer protected!", 10, 70, 20);
                 }
                 saveProtectedChunks();                
@@ -215,16 +295,16 @@ public class ChunkProtectionManager implements Listener {
 
         ProtectedChunkData protectedChunk = protectedChunks.get(chunkKey);
         if (protectedChunk != null) {
-            if (!protectedChunk.getOwner().equals(player.getUniqueId())) {
+            int currentStorageCount = protectedChunk.getStorageCount();
+            if (!protectedChunk.getOwner().equals(player.getUniqueId()) && currentStorageCount <= 2) {
                 event.setCancelled(true);
                 player.sendTitle("§cDivine Protection", "§4Cannot Break Here!", 10, 70, 20);
-            } else if (event.getBlock() instanceof BlockChest) {
-                int previousChestCount = protectedChunk.getChestCount();
-                protectedChunk.decrementChestCount();
-                int currentChestCount = protectedChunk.getChestCount();
-
-                if (previousChestCount > 2 && currentChestCount <= 2) {
-                player.sendTitle("§6Divine Protection", "§eProtection reactivated!", 10, 70, 20);
+            } else if (isStorageBlock(event.getBlock())) {
+                int previousStorageCount = protectedChunk.getStorageCount();
+                protectedChunk.decrementStorageCount();
+                currentStorageCount = protectedChunk.getStorageCount();
+                if (previousStorageCount > 2 && currentStorageCount <= 2) {
+                    player.sendTitle("§6Divine Protection", "§eProtection reactivated!", 10, 70, 20);
                 }
                 saveProtectedChunks();
             }
@@ -241,24 +321,107 @@ public class ChunkProtectionManager implements Listener {
 
     @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
-        List<Block> blockList = event.getBlockList();
-        blockList.removeIf(block -> {
+        // Create a list to track chunks that need full protection
+        List<String> protectedChunkKeys = new ArrayList<>();
+        
+        // First, identify chunks that should be fully protected
+        for (Block block : event.getBlockList()) {
             String chunkKey = getChunkKey(block.getLocation());
-            return chunkKey != null && protectedChunks.containsKey(chunkKey);
+            
+            // Skip if chunk key is null
+            if (chunkKey == null) {
+                continue;
+            }
+            
+            // Get protected chunk data
+            ProtectedChunkData protectedChunk = protectedChunks.get(chunkKey);
+            
+            // If chunk is protected with 2 or fewer storage blocks
+            if (protectedChunk != null && protectedChunk.getStorageCount() <= 2) {
+                protectedChunkKeys.add(chunkKey);
+            }
+        }
+        
+        // Remove blocks from chunks that need full protection
+        event.getBlockList().removeIf(block -> {
+            String chunkKey = getChunkKey(block.getLocation());
+            return chunkKey != null && protectedChunkKeys.contains(chunkKey);
         });
+        
+        // Track storage block removals
+        Map<String, Integer> storageBlockRemovals = new HashMap<>();
+        
+        // Iterate through blocks that were actually removed in the explosion
+        for (Block block : new ArrayList<>(event.getBlockList())) {
+            String chunkKey = getChunkKey(block.getLocation());
+            
+            // Skip if chunk key is null
+            if (chunkKey == null) {
+                continue;
+            }
+            
+            ProtectedChunkData protectedChunk = protectedChunks.get(chunkKey);
+            
+            // If it's a storage block in a protected chunk
+            if (protectedChunk != null && isStorageBlock(block)) {
+                storageBlockRemovals.merge(chunkKey, 1, Integer::sum);
+            }
+        }
+        
+        // Apply storage block removals
+        for (Map.Entry<String, Integer> entry : storageBlockRemovals.entrySet()) {
+            ProtectedChunkData protectedChunk = protectedChunks.get(entry.getKey());
+            if (protectedChunk != null) {
+                for (int i = 0; i < entry.getValue(); i++) {
+                    protectedChunk.decrementStorageCount();
+                }
+            }
+        }
+        
+        // Save updated chunk data
+        saveProtectedChunks();
     }
 
     @EventHandler
-    public void onBlockBurn(BlockBurnEvent event) {
-        String chunkKey = getChunkKey(event.getBlock().getLocation());
-        if (chunkKey != null && protectedChunks.containsKey(chunkKey)) {
+    public void onBlockIgnite(BlockIgniteEvent event) {
+        Position blockPos = event.getBlock().getLocation();
+        String chunkKey = getChunkKey(blockPos);
+
+        if (chunkKey == null) {
+            return;
+        }
+
+        ProtectedChunkData protectedChunk = protectedChunks.get(chunkKey);
+
+        // Check if the chunk is protected
+        if (protectedChunk != null && protectedChunk.getStorageCount() <= 2) {
+            // Cancel the burn event
             event.setCancelled(true);
+
+            // Replace fire with air while preserving the original block
+            Block burnedBlock = event.getBlock();
+            Level level = burnedBlock.getLevel();
+
+            if (burnedBlock.getId() == Block.FIRE) {
+                level.setBlock(burnedBlock.getLocation(), Block.get(Block.AIR), true, true);
+            }
         }
     }
 
-    public ProtectedChunkData[] getProtectedChunks() {
-        // Convert the Set of ProtectedChunkData to an array and return it
-        return ((List<ProtectedChunkData>) protectedChunks).toArray(new ProtectedChunkData[0]);
+        
+    public ProtectedChunkData getProtectedChunk(String chunkKey) {
+        return protectedChunks.get(chunkKey);
+    }
+
+    public void removeProtectedChunk(String chunkKey) {
+        if (protectedChunks.containsKey(chunkKey)) {
+            protectedChunks.remove(chunkKey);
+            saveProtectedChunks(); // Ensure changes are persisted
+        }
+    }
+
+    public Collection<ProtectedChunkData> getAllProtectedChunks() {
+        return new ArrayList<>(protectedChunks.values());
     }
 
 }

@@ -1,4 +1,8 @@
 com\royalkingdoms\rokidivineprotection\ProtectedChunkData.class
-com\royalkingdoms\rokidivineprotection\RokiDivineProtection.class
+com\royalkingdoms\rokidivineprotection\ProtectedChunkData$WarningType.class
 com\royalkingdoms\rokidivineprotection\ChunkProtectionManager.class
 com\royalkingdoms\rokidivineprotection\ChunkProtectionManager$1.class
+com\royalkingdoms\rokidivineprotection\RokiDivineProtection$1.class
+com\royalkingdoms\rokidivineprotection\RokiDivineProtection$2.class
+com\royalkingdoms\rokidivineprotection\ChunkWarningManager.class
+com\royalkingdoms\rokidivineprotection\RokiDivineProtection.class

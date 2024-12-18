@@ -10,3 +10,9 @@ commands:
   protectland:
     description: Claim and protect a chunk of land
     usage: /protectland
+  unprotectland:
+    description: Unclaim a chunk of land, there will be no refund
+    usage: /unprotectland
+  findprotectedchunks:
+    description: Lists all the protected chunks owned by the player.
+    usage: /findprotectedchunks

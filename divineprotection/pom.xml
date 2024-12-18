@@ -35,6 +35,13 @@
     </repositories>
 
     <dependencies>
+
+        <dependency>
+            <groupId>com.github.jrodr10</groupId>
+            <artifactId>FakeInventories</artifactId>
+            <version>73b677a56a</version>
+        </dependency>
+    
         <dependency>
             <groupId>cn.nukkit</groupId>
             <artifactId>nukkit</artifactId>
