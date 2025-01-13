@@ -35,11 +35,14 @@ public class ChunkProtectionManager implements Listener {
     private static final int MAX_CHESTS = 2;
     private final File chunksFile;
     private final Gson gson;
+    private final Map<UUID, Map<UUID, TrustedPlayerPermissions>> trustedPlayers = new ConcurrentHashMap<>();
+    private final File trustedPlayersFile;
 
     public ChunkProtectionManager(RokiDivineProtection plugin) {
         this.plugin = plugin;
         this.chunksFile = new File(plugin.getDataFolder(), "protected_chunks.json");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
+        this.trustedPlayersFile = new File(plugin.getDataFolder(), "trusted_players.json");
         
         // Ensure data folder exists
         if (!plugin.getDataFolder().exists()) {
@@ -48,6 +51,7 @@ public class ChunkProtectionManager implements Listener {
         
         // Load protected chunks
         loadProtectedChunks();
+        loadTrustedPlayers();
     }
 
     private void loadProtectedChunks() {
@@ -420,6 +424,43 @@ public class ChunkProtectionManager implements Listener {
 
     public Collection<ProtectedChunkData> getAllProtectedChunks() {
         return new ArrayList<>(protectedChunks.values());
+    }
+
+    public void addTrustedPlayer(UUID ownerId, UUID trustedPlayerId, boolean canBreakBlocks, boolean canPlaceBlocks, boolean canOpenChests, boolean canOpenDoors) {
+        trustedPlayers.computeIfAbsent(ownerId, k -> new ConcurrentHashMap<>())
+                      .put(trustedPlayerId, new TrustedPlayerPermissions(canBreakBlocks, canPlaceBlocks, canOpenChests, canOpenDoors));
+        saveTrustedPlayers();
+    }
+
+    public TrustedPlayerPermissions getTrustedPlayerPermissions(UUID ownerId, UUID trustedPlayerId) {
+        return trustedPlayers.getOrDefault(ownerId, Collections.emptyMap()).get(trustedPlayerId);
+    }
+
+    private void saveTrustedPlayers() {
+        try (Writer writer = new FileWriter(trustedPlayersFile)) {
+            gson.toJson(trustedPlayers, writer);
+            plugin.getLogger().info("Saved trusted players and their permissions.");
+        } catch (IOException e) {
+            plugin.getLogger().error("Error saving trusted players: " + e.getMessage());
+        }
+    }
+
+    private void loadTrustedPlayers() {
+        if (!trustedPlayersFile.exists()) {
+            return;
+        }
+
+        try (Reader reader = new FileReader(trustedPlayersFile)) {
+            Type type = new TypeToken<Map<UUID, Map<UUID, TrustedPlayerPermissions>>>(){}.getType();
+            Map<UUID, Map<UUID, TrustedPlayerPermissions>> loadedTrustedPlayers = gson.fromJson(reader, type);
+            
+            if (loadedTrustedPlayers != null) {
+                trustedPlayers.putAll(loadedTrustedPlayers);
+                plugin.getLogger().info("Loaded trusted players and their permissions.");
+            }
+        } catch (IOException e) {
+            plugin.getLogger().error("Error loading trusted players: " + e.getMessage());
+        }
     }
 
 }

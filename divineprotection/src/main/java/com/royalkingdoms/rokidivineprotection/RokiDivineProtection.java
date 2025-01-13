@@ -8,16 +8,25 @@ import cn.nukkit.command.Command;
 import cn.nukkit.command.CommandSender;
 import cn.nukkit.plugin.PluginBase;
 import cn.nukkit.scheduler.Task;
+import com.royalkingdoms.rokidivineprotection.gui.ProtectionGUI;
+import cn.nukkit.form.response.FormResponseSimple;
+import cn.nukkit.event.EventHandler;
+import cn.nukkit.event.Listener;
+import cn.nukkit.event.player.PlayerFormRespondedEvent;
+import cn.nukkit.form.window.FormWindowSimple;
 
 
-public class RokiDivineProtection extends PluginBase {
+public class RokiDivineProtection extends PluginBase implements Listener {
     private ChunkProtectionManager chunkProtectionManager;
+    private ProtectionGUI protectionGUI;
 
     @Override
     public void onEnable() {
         chunkProtectionManager = new ChunkProtectionManager(this);
+        protectionGUI = new ProtectionGUI(chunkProtectionManager);
 
         getServer().getPluginManager().registerEvents(chunkProtectionManager, this);
+        getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("RokiDivineProtection has been enabled!");
 
         startReminderTask();
@@ -69,6 +78,17 @@ public class RokiDivineProtection extends PluginBase {
 
             Player player = (Player) sender;
             return unprotectLand(player);
+        }
+
+        if (command.getName().equalsIgnoreCase("divineprotection")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage("§cThis command can only be used by players!");
+                return true;
+            }
+
+            Player player = (Player) sender;
+            protectionGUI.showProtectedChunks(player);
+            return true;
         }
 
         return false;
@@ -174,5 +194,14 @@ public class RokiDivineProtection extends PluginBase {
                 }
             }
         }, 20 * 60); // Run every minute (20 ticks = 1 second)
+    }
+
+    @EventHandler
+    public void onPlayerFormResponded(PlayerFormRespondedEvent event) {
+        Player player = event.getPlayer();
+        if (event.getWindow() instanceof FormWindowSimple) {
+            FormResponseSimple response = (FormResponseSimple) event.getResponse();
+            protectionGUI.handleProtectedChunksResponse(player, response);
+        }
     }
 }
