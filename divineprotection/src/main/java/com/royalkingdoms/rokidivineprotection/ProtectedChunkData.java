@@ -6,10 +6,6 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 
-import javax.swing.plaf.basic.BasicInternalFrameTitlePane.MaximizeAction;
-
-import org.checkerframework.checker.units.qual.C;
-
 public class ProtectedChunkData {
     private UUID owner;
     private String worldName;
